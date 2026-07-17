@@ -1,0 +1,21 @@
+{
+  "name": "three-gen",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Reliable 3D generation for AI agents — dedicated generative 3D engines (Meshy/Tripo) + headless multi-view rendering + closed-loop vision QA, exposed as an MCP tool and a CLI.",
+  "bin": {
+    "three-gen": "./cli.mjs"
+  },
+  "scripts": {
+    "mcp": "node server.mjs",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "dependencies": {
+    "@google/model-viewer": "^4.1.0",
+    "playwright": "^1.50.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

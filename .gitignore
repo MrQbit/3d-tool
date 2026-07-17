@@ -1,0 +1,6 @@
+node_modules/
+3d-out/
+renders/
+*.glb
+.env
+.env.*
