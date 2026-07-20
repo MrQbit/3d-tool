@@ -25,6 +25,7 @@
  * tools; render tools need playwright + @google/model-viewer (npm install).
  */
 
+import { copyFileSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { engineFor, defaultEngine, waitForTask } from "./lib/engines.mjs";
@@ -41,7 +42,7 @@ const TOOLS = [
       type: "object",
       properties: {
         prompt: { type: "string" },
-        engine: { type: "string", enum: ["meshy", "tripo"] },
+        engine: { type: "string", enum: ["meshy", "tripo", "local"] },
         style: { type: "string", enum: ["realistic", "sculpture", "lowpoly"] },
         out_dir: { type: "string", description: "Output directory (default ./3d-out). Each round writes round-N/." },
         max_rounds: { type: "number", description: "Max generate→judge rounds (default 3)." },
@@ -58,7 +59,7 @@ const TOOLS = [
       type: "object",
       properties: {
         prompt: { type: "string", description: "Shape, materials, style, distinguishing details." },
-        engine: { type: "string", enum: ["meshy", "tripo"], description: "Default: whichever key is configured." },
+        engine: { type: "string", enum: ["meshy", "tripo", "local"], description: "Default: whichever key is configured." },
         style: { type: "string", enum: ["realistic", "sculpture", "lowpoly"], description: "Meshy only." },
       },
       required: ["prompt"],
@@ -73,7 +74,7 @@ const TOOLS = [
       properties: {
         image_url: { type: "string" },
         image_path: { type: "string", description: "Local path (uploaded directly; Tripo only)." },
-        engine: { type: "string", enum: ["meshy", "tripo"] },
+        engine: { type: "string", enum: ["meshy", "tripo", "local"] },
       },
     },
   },
@@ -86,7 +87,7 @@ const TOOLS = [
       properties: {
         task_id: { type: "string" },
         texture_prompt: { type: "string" },
-        engine: { type: "string", enum: ["meshy", "tripo"] },
+        engine: { type: "string", enum: ["meshy", "tripo", "local"] },
       },
       required: ["task_id"],
     },
@@ -97,7 +98,7 @@ const TOOLS = [
       "Poll a 3D task: status (pending|running|succeeded|failed), progress, and on success model_glb_url + preview_image_url. Provider URLs EXPIRE within hours — download promptly with download_model.",
     inputSchema: {
       type: "object",
-      properties: { task_id: { type: "string" }, engine: { type: "string", enum: ["meshy", "tripo"] } },
+      properties: { task_id: { type: "string" }, engine: { type: "string", enum: ["meshy", "tripo", "local"] } },
       required: ["task_id"],
     },
   },
@@ -108,7 +109,7 @@ const TOOLS = [
       type: "object",
       properties: {
         task_id: { type: "string" },
-        engine: { type: "string", enum: ["meshy", "tripo"] },
+        engine: { type: "string", enum: ["meshy", "tripo", "local"] },
         timeout_seconds: { type: "number" },
       },
       required: ["task_id"],
@@ -122,7 +123,7 @@ const TOOLS = [
       type: "object",
       properties: {
         task_id: { type: "string" },
-        engine: { type: "string", enum: ["meshy", "tripo"] },
+        engine: { type: "string", enum: ["meshy", "tripo", "local"] },
         out_dir: { type: "string", description: "Default ./3d-out" },
         basename: { type: "string", description: "Default: the task id." },
       },
@@ -191,7 +192,13 @@ async function callTool(name, args = {}) {
       const outDir = resolve(args.out_dir || "./3d-out");
       const base = args.basename || args.task_id;
       const saved = {};
-      if (state.model_glb_url) saved.model = await downloadTo(state.model_glb_url, resolve(outDir, `${base}.glb`));
+      if (state.model_glb_url) {
+        saved.model = await downloadTo(state.model_glb_url, resolve(outDir, `${base}.glb`));
+      } else if (state.model_glb_path) {
+        mkdirSync(outDir, { recursive: true });
+        saved.model = resolve(outDir, `${base}.glb`);
+        copyFileSync(state.model_glb_path, saved.model);
+      }
       if (state.preview_image_url) {
         const ext = state.preview_image_url.split("?")[0].split(".").pop()?.toLowerCase();
         const pext = ["png", "jpg", "jpeg", "webp"].includes(ext) ? ext : "png";

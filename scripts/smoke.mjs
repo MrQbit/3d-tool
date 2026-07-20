@@ -89,5 +89,90 @@ for (const v of views) {
   if (!existsSync(v.path) || statSync(v.path).size < 500) fail(`view ${v.angle} missing or empty`);
 }
 console.error(`✓ renderer OK (${views.length} views under ${resolve(tmp, "views")})`);
+
+// ── 3. Full LOCAL pipeline against mock services ─────────────────────────────
+// Mocks the three local servers (A1111 txt2img, Hunyuan3D api_server, an
+// OpenAI-compatible critic) and runs generateVerified end-to-end with
+// engine "local" — real renderer, fake generation. Proves the fully-local
+// wiring without a GPU.
+console.error("· local pipeline (mock Hunyuan3D + txt2img + critic)…");
+
+import { createServer } from "node:http";
+
+const PNG_1PX =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+const GLB_B64 = minimalGlb().toString("base64");
+
+function mockServer(handler) {
+  return new Promise((resolveSrv) => {
+    const srv = createServer((req, res) => {
+      let body = "";
+      req.on("data", (d) => (body += d));
+      req.on("end", () => {
+        const reply = handler(req.url, body);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(reply));
+      });
+    });
+    srv.listen(0, "127.0.0.1", () => resolveSrv(srv));
+  });
+}
+
+let statusCalls = 0;
+const t2i = await mockServer((url) => (url.includes("txt2img") ? { images: [PNG_1PX] } : {}));
+const hunyuan = await mockServer((url) => {
+  if (url === "/send") return { uid: "mock-task-1" };
+  if (url.startsWith("/status/")) {
+    statusCalls++;
+    // First poll: still processing; then done with the GLB inline.
+    return statusCalls < 2 ? { status: "processing" } : { status: "completed", model_base64: GLB_B64 };
+  }
+  return {};
+});
+const criticSrv = await mockServer((url) =>
+  url.includes("chat/completions")
+    ? {
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                score: 8,
+                acceptable: true,
+                summary: "Mock verdict: matches the prompt.",
+                issues: [],
+                revisedPrompt: "",
+              }),
+            },
+          },
+        ],
+      }
+    : {}
+);
+
+process.env.LOCAL_3D_BASE_URL = `http://127.0.0.1:${hunyuan.address().port}`;
+process.env.LOCAL_T2I_BASE_URL = `http://127.0.0.1:${t2i.address().port}`;
+process.env.CRITIC_BASE_URL = `http://127.0.0.1:${criticSrv.address().port}/v1`;
+process.env.THREE3D_CRITIC_MODEL = "mock-vision";
+process.env.LOCAL_3D_OUT = resolve(tmp, "local-tasks");
+
+const { generateVerified } = await import(resolve(ROOT, "lib/pipeline.mjs"));
+const result = await generateVerified({
+  prompt: "a test triangle",
+  engine: "local",
+  outDir: resolve(tmp, "local-out"),
+  maxRounds: 1,
+  timeoutSeconds: 30,
+  log: () => {},
+});
+t2i.close();
+hunyuan.close();
+criticSrv.close();
+
+if (result.accepted !== true) fail(`local pipeline: expected accepted=true, got ${JSON.stringify(result).slice(0, 200)}`);
+if (!existsSync(result.final.glb)) fail("local pipeline: final GLB missing");
+if (result.final.views.length !== 4) fail("local pipeline: expected 4 rendered views");
+if (result.final.verdict?.score !== 8) fail("local pipeline: critic verdict not propagated");
+console.error("✓ local pipeline OK (mock generate → render → critique accepted)");
+
 console.error("All smoke tests passed.");
 process.exit(0);

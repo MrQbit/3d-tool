@@ -54,6 +54,12 @@ Keys (each provider has a free tier; only what you use is required):
 | `TRIPO_API_KEY` | Tripo engine | https://platform.tripo3d.ai/api-keys |
 | `OPENROUTER_API_KEY` | vision critic | https://openrouter.ai/keys |
 
+**No providers at all?** There's a third engine: `local`, backed by
+open-weight **Hunyuan3D-2.1** on your own NVIDIA GPU, with an Ollama vision
+model as the critic — the entire loop runs on your machine with zero
+external dependencies. See **[docs/local-setup.md](docs/local-setup.md)**
+(`LOCAL_3D_BASE_URL`, `LOCAL_T2I_BASE_URL`, `CRITIC_BASE_URL`).
+
 ### As an MCP tool (Claude Code)
 
 ```bash
